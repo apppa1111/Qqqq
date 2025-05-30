@@ -1,94 +1,113 @@
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import random
 
-import os
-import handlers
-from aiogram import executor, types
-from aiogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
-from data import config
-from loader import dp, db, bot
-import filters
-import logging
+ADMIN_ID = 396217206  # Ваш ID
 
-filters.setup(dp)
+bible_quotes = [
+    "«Господь — мой пастырь; я ни в чём не буду нуждаться.» (Псалом 22:1)",
+    "«Блаженны чистые сердцем, ибо они Бога увидят.» (Матфей 5:8)",
+    "«Не бойся, ибо Я с тобой.» (Исаия 41:10)",
+    "«Я — путь, и истина, и жизнь.» (Иоанн 14:6)"
+]
 
-WEBAPP_HOST = "0.0.0.0"
-WEBAPP_PORT = int(os.environ.get("PORT", 5000))
-user_message = 'Пользователь'
-admin_message = 'Админ'
+auto_responses = {
+    "как дела?": "Спасибо, всё хорошо! 🙏",
+    "привет": "Здравствуйте! Чем могу помочь? 🙌",
+    "пока": "До свидания! Да благословит вас Бог! ✋"
+}
 
+keyboard = [
+    ["📖 Чтение на день", "🕊 Слово дня"],
+    ["📚 Библиотека христианина", "❓ Частый вопрос"],
+    ["😔 Что делать, если…", "🧞‍♂️ Вопрос священнику"],
+    ["📅 Церковный календарь"]
+]
+reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-@dp.message_handler(commands='start')
-async def cmd_start(message: types.Message):
+PRAYER_FILE = "prayers.txt"
 
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+# /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Добро пожаловать! Пожалуйста, выберите действие:", reply_markup=reply_markup)
 
-    markup.row(user_message, admin_message)
+# Чтение на день
+async def reading(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Пример текста, позже можно заменить на динамическое чтение Евангелия дня
+    text = "Евангелие дня: «В начале было Слово...»"
+    await update.message.reply_text(text)
 
-    await message.answer('''Привет! 👋
+# Слово дня
+async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(random.choice(bible_quotes))
 
-🤖 Я бот-магазин по подаже товаров любой категории.
-    
-🛍️ Чтобы перейти в каталог и выбрать приглянувшиеся товары возпользуйтесь командой /menu.
+# Библиотека христианина (утреннее правило)
+async def prayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Пример текста, наполнить позже
+    text = "Утреннее молитвенное правило: молитва о прощении..."
+    await update.message.reply_text(text)
 
-💰 Пополнить счет можно через Яндекс.кассу, Сбербанк или Qiwi.
+# Частые вопросы
+async def question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Пример ответа
+    text = "Часто задаваемые вопросы:\n1. Как подготовиться к исповеди?\n2. Что такое причастие?"
+    await update.message.reply_text(text)
 
-❓ Возникли вопросы? Не проблема! Команда /sos поможет связаться с админами, которые постараются как можно быстрее откликнуться.
+# Советы в духовных состояниях
+async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "Если вы чувствуете уныние, помолитесь и почитайте Псалом 50."
+    await update.message.reply_text(text)
 
-🤝 Заказать похожего бота? Свяжитесь с разработчиком <a href="https://t.me/NikolaySimakov">Nikolay Simakov</a>, он не кусается)))
-    ''', reply_markup=markup)
+# Вопрос священнику
+async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting_question"] = True
+    await update.message.reply_text("✍️ Пожалуйста, напишите ваш вопрос священнику:")
 
+# Сохранение вопроса священнику
+async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    question = update.message.text
+    with open("questions.txt", "a", encoding="utf-8") as f:
+        f.write(f"{update.effective_user.first_name}: {question}\n")
+    await update.message.reply_text("Спасибо! Ваш вопрос сохранён и будет рассмотрен.")
 
-@dp.message_handler(text=user_message)
-async def user_mode(message: types.Message):
+# Церковный календарь (пример)
+async def calendar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Пример статичного текста, можно реализовать парсер для динамики
+    text = "Сегодня 30 мая. Пост: строгий пост."
+    await update.message.reply_text(text)
 
-    cid = message.chat.id
-    if cid in config.ADMINS:
-        config.ADMINS.remove(cid)
+# Обработка текстовых сообщений
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
 
-    await message.answer('Включен пользовательский режим.', reply_markup=ReplyKeyboardRemove())
+    if context.user_data.get("awaiting_question"):
+        context.user_data["awaiting_question"] = False
+        await save_question(update, context)
+        return
 
-
-@dp.message_handler(text=admin_message)
-async def admin_mode(message: types.Message):
-
-    cid = message.chat.id
-    if cid not in config.ADMINS:
-        config.ADMINS.append(cid)
-
-    await message.answer('Включен админский режим.', reply_markup=ReplyKeyboardRemove())
-
-
-async def on_startup(dp):
-    logging.basicConfig(level=logging.INFO)
-    db.create_tables()
-
-    await bot.delete_webhook()
-    if config.WEBHOOK_URL:
-        await bot.set_webhook(config.WEBHOOK_URL)
-
-
-async def on_shutdown():
-    logging.warning("Shutting down..")
-    await bot.delete_webhook()
-    await dp.storage.close()
-    await dp.storage.wait_closed()
-    logging.warning("Bot down")
-
-
-if __name__ == '__main__':
-
-    if (("HEROKU_APP_NAME" in list(os.environ.keys())) or
-        ("RAILWAY_PUBLIC_DOMAIN" in list(os.environ.keys()))):
-
-        executor.start_webhook(
-            dispatcher=dp,
-            webhook_path=config.WEBHOOK_PATH,
-            on_startup=on_startup,
-            on_shutdown=on_shutdown,
-            skip_updates=True,
-            host=WEBAPP_HOST,
-            port=WEBAPP_PORT,
-        )
-
+    if text == "📖 чтение на день".lower():
+        await reading(update, context)
+    elif text == "🕊 слово дня".lower():
+        await quote(update, context)
+    elif text == "📚 библиотека христианина".lower():
+        await prayer(update, context)
+    elif text == "❓ частый вопрос".lower():
+        await question(update, context)
+    elif text == "😔 что делать, если…".lower():
+        await state(update, context)
+    elif text == "🧞‍♂️ вопрос священнику".lower():
+        await ask(update, context)
+    elif text == "📅 церковный календарь".lower():
+        await calendar(update, context)
+    elif text in auto_responses:
+        await update.message.reply_text(auto_responses[text])
     else:
+        await update.message.reply_text("❗ Пожалуйста, используйте кнопки ниже.", reply_markup=reply_markup)
 
-        executor.start_polling(dp, on_startup=on_startup, skip_updates=False)
+# Запуск бота
+app = ApplicationBuilder().token("7820850246:AAGC1mrwvF-1R9tEOf0RKCoE9prP5xXp180").build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+app.run_polling()
